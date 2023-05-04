@@ -1,9 +1,8 @@
 package us.thezircon.play.autopickup.listeners;
 
-import me.crafter.mc.lockettepro.LocketteProAPI;
-import net.md_5.bungee.api.ChatMessageType;
-import net.md_5.bungee.api.chat.TextComponent;
-import org.bukkit.*;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.block.*;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Entity;
@@ -15,14 +14,12 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.DoubleChestInventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.BlockStateMeta;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.scheduler.BukkitRunnable;
 import us.thezircon.play.autopickup.AutoPickup;
-import us.thezircon.play.autopickup.utils.HexFormat;
-import us.thezircon.play.autopickup.utils.Mendable;
-import us.thezircon.play.autopickup.utils.PickupObjective;
-import us.thezircon.play.autopickup.utils.TallCrops;
+import us.thezircon.play.autopickup.utils.*;
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.database.objects.Island;
 
@@ -30,6 +27,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class BlockBreakEventListener implements Listener {
 
@@ -80,67 +78,6 @@ public class BlockBreakEventListener implements Listener {
                 }
             }
         }
-
-        // LockettePro Patch
-        if (AutoPickup.usingLocketteProByBrunyman) {
-            if (LocketteProAPI.isLocked(block)) {
-                return;
-            }
-        }
-
-        // AOneBlock Patch
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (AutoPickup.usingBentoBox) {
-                    BentoBox bb = BentoBox.getInstance();
-                    if (BentoBox.getInstance().getAddonsManager().getAddonByName("AOneBlock").isPresent()) {
-
-                        if (!bb.getIslands().getIslandAt(loc).isPresent()) { return; }
-
-                        Island island = bb.getIslands().getIslandAt(loc).get();
-                        if (island.getCenter().equals(block.getLocation())) {
-                            for (Entity ent : loc.getWorld().getNearbyEntities(block.getLocation().add(0, 1, 0), 1, 1, 1)) {
-                                if (ent instanceof Item) {
-
-                                    HashMap<Integer, ItemStack> leftOver = player.getInventory().addItem(((Item) ent).getItemStack());
-                                    ent.remove();
-                                    if (leftOver.keySet().size()>0) {
-                                        for (ItemStack item : leftOver.values()) {
-                                            player.getWorld().dropItemNaturally(loc, item);
-                                        }
-                                        if (doFullInvMSG) {
-                                            long secondsLeft;
-                                            long cooldown = 15000; // 15 sec
-                                            if (AutoPickup.lastInvFullNotification.containsKey(player.getUniqueId())) {
-                                                secondsLeft = (AutoPickup.lastInvFullNotification.get(player.getUniqueId())/1000)+ cooldown/1000 - (System.currentTimeMillis()/1000);
-                                            } else {
-                                                secondsLeft = 0;
-                                            }
-                                            if (secondsLeft<=0) {
-                                                player.sendMessage(PLUGIN.getMsg().getPrefix() + " " + PLUGIN.getMsg().getFullInventory());
-                                                AutoPickup.lastInvFullNotification.put(player.getUniqueId(), System.currentTimeMillis());
-                                            }
-                                        }
-                                    }
-
-//                                    if (player.getInventory().firstEmpty() == -1) { // Checks for inventory space
-//                                        //Player has no space
-//                                        if (doFullInvMSG) {
-//                                            player.sendMessage(PLUGIN.getMsg().getPrefix() + " " + PLUGIN.getMsg().getFullInventory());
-//                                        }
-//                                        return;
-//                                    } else {
-//                                        player.getInventory().addItem(((Item) ent).getItemStack());
-//                                        ent.remove();
-//                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }.runTaskLater(PLUGIN, 1);
 
         // Mend Items & Give Player XP
         int xp = e.getExpToDrop();
@@ -401,6 +338,31 @@ public class BlockBreakEventListener implements Listener {
             vertBreak(player, loc);
         } else {
             ItemStack drop = new ItemStack(type, amt);
+
+            for (ItemStack item : player.getInventory()) {
+                if (Util.isTrashBox(item)) {
+                    return;
+                } else if (Util.isStorageBox(item)) {
+                    BoxData data = Util.getData(item.getItemMeta());
+                    if (data.mats.contains(drop.getType())) {
+                        BlockStateMeta im = (BlockStateMeta)item.getItemMeta();
+                        ShulkerBox box = (ShulkerBox) im.getBlockState();
+                        HashMap<Integer, ItemStack> leftItem = box.getInventory().addItem(drop);
+                        im.setBlockState(box);
+                        item.setItemMeta(im);
+                        if (!leftItem.isEmpty())
+                            drop = new ItemStack(type, 0);
+                        for (Map.Entry<Integer, ItemStack> entry : leftItem.entrySet()) {
+                            if (entry.getValue().getType()==drop.getType()) {
+                                drop.setAmount(drop.getAmount()+entry.getValue().getAmount());
+                            } else {
+                                player.getWorld().dropItemNaturally(loc, entry.getValue());
+                            }
+                        }
+                    }
+                }
+            }
+
             HashMap<Integer, ItemStack> leftOver = player.getInventory().addItem(drop);
             if (leftOver.keySet().size()>0) {
                 for (ItemStack item : leftOver.values()) {

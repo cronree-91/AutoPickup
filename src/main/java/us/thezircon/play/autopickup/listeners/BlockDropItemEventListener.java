@@ -3,6 +3,7 @@ package us.thezircon.play.autopickup.listeners;
 import org.bukkit.Location;
 import org.bukkit.block.Block;
 import org.bukkit.block.Container;
+import org.bukkit.block.ShulkerBox;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
@@ -11,15 +12,15 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockDropItemEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.BlockStateMeta;
 import us.thezircon.play.autopickup.AutoPickup;
 import us.thezircon.play.autopickup.utils.AutoSmelt;
+import us.thezircon.play.autopickup.utils.BoxData;
 import us.thezircon.play.autopickup.utils.PickupObjective;
+import us.thezircon.play.autopickup.utils.Util;
 
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 public class BlockDropItemEventListener implements Listener {
 
@@ -62,6 +63,8 @@ public class BlockDropItemEventListener implements Listener {
 
             ItemStack drop = i.getItemStack();
 
+
+
             if (doBlacklist) { // Checks if blacklist is enabled
                 if (blacklist.contains(drop.getType().toString())) { // Stops resets the loop skipping the item & not removing it
                     continue;
@@ -72,6 +75,37 @@ public class BlockDropItemEventListener implements Listener {
                 drop = AutoSmelt.smelt(drop, player);
             }
 
+            boolean endFlag = false;
+            for (ItemStack item : player.getInventory()) {
+                if (Util.isTrashBox(item)) {
+                    return;
+                } else if (Util.isStorageBox(item)) {
+                    BoxData data = Util.getData(item.getItemMeta());
+                    if (data.mats.contains(drop.getType())) {
+                        BlockStateMeta im = (BlockStateMeta)item.getItemMeta();
+                        ShulkerBox box = (ShulkerBox) im.getBlockState();
+                        HashMap<Integer, ItemStack> leftItem = box.getInventory().addItem(drop);
+                        im.setBlockState(box);
+                        item.setItemMeta(im);
+                        if (!leftItem.isEmpty())
+                            drop = new ItemStack(drop.getType(), 0);
+                        else {
+                            i.remove();
+                            endFlag = true;
+                            break;
+                        }
+                        for (Map.Entry<Integer, ItemStack> entry : leftItem.entrySet()) {
+                            if (entry.getValue().getType()==drop.getType()) {
+                                drop.setAmount(drop.getAmount()+entry.getValue().getAmount());
+                            } else {
+                                player.getWorld().dropItemNaturally(loc, entry.getValue());
+                            }
+                        }
+                    }
+                }
+            }
+            if (endFlag)
+                continue;
             HashMap<Integer, ItemStack> leftOver = player.getInventory().addItem(drop);
             if (leftOver.keySet().size()>0) {
 
