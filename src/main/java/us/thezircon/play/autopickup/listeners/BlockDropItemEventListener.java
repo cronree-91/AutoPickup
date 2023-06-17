@@ -78,7 +78,9 @@ public class BlockDropItemEventListener implements Listener {
             boolean endFlag = false;
             for (ItemStack item : player.getInventory()) {
                 if (Util.isTrashBox(item)) {
-                    return;
+                    i.remove();
+                    endFlag  =true;
+                    break;
                 } else if (Util.isStorageBox(item)) {
                     BoxData data = Util.getData(item.getItemMeta());
                     if (data.mats.contains(drop.getType())) {
